@@ -1,66 +1,86 @@
-#include <ModbusMaster.h>
+#include <Arduino.h>
 
-// ===== PIN DEFINITIONS (FROM YOUR SCHEMATIC) =====
-#define RS485_EN 4      // RE + DE (MAX485)
-#define TXD1     17     // UART1 TX
-#define RXD1     16     // UART1 RX
+#define TXD1 17
+#define RXD1 16
+#define RS485_DE 4   // change if needed
 
-ModbusMaster node;
+HardwareSerial modbus(1);
 
-// ===== RS485 DIRECTION CONTROL =====
-void preTransmission() {
-  digitalWrite(RS485_EN, HIGH);   // transmit
+/* CRC16 (Modbus) */
+uint16_t modbusCRC(uint8_t *buf, uint8_t len)
+{
+  uint16_t crc = 0xFFFF;
+
+  for (uint8_t pos = 0; pos < len; pos++) {
+    crc ^= (uint16_t)buf[pos];
+
+    for (int i = 8; i != 0; i--) {
+      if ((crc & 0x0001) != 0) {
+        crc >>= 1;
+        crc ^= 0xA001;
+      } else {
+        crc >>= 1;
+      }
+    }
+  }
+  return crc;
 }
 
-void postTransmission() {
-  digitalWrite(RS485_EN, LOW);    // receive
-}
-
-void setup() {
+void setup()
+{
   Serial.begin(115200);
-  Serial.println("IRHAJHUS Modbus Reader Starting...");
+  delay(1000);
 
-  pinMode(RS485_EN, OUTPUT);
-  digitalWrite(RS485_EN, LOW);
+  pinMode(RS485_DE, OUTPUT);
+  digitalWrite(RS485_DE, LOW); // receive mode
 
-  // UART1 for RS485
-  Serial1.begin(9600, SERIAL_8N1, RXD1, TXD1);
+  modbus.begin(9600, SERIAL_8E1, RXD1, TXD1);
 
-  // Modbus slave ID = 1
-  node.begin(1, Serial1);
-  node.preTransmission(preTransmission);
-  node.postTransmission(postTransmission);
+  Serial.println("RS485 Modbus Test Started");
 }
 
-void loop() {
-  uint8_t result;
+void loop()
+{
+  uint8_t request[8];
 
+  // Modbus Read Holding Registers
+  request[0] = 0x01;     // Slave ID
+  request[1] = 0x03;     // Function code
+  request[2] = 0x00;     // Start addr Hi
+  request[3] = 0x06;     // Start addr Lo
+  request[4] = 0x00;     // Quantity Hi
+  request[5] = 0x02;     // Quantity Lo
 
-  result = node.readHoldingRegisters(0x0006, 6);
+  uint16_t crc = modbusCRC(request, 6);
+  request[6] = crc & 0xFF;
+  request[7] = crc >> 8;
 
-  if (result == node.ku8MBSuccess) {
+  // ---- SEND ----
+  digitalWrite(RS485_DE, HIGH);
+  delayMicroseconds(50);
 
-    float voltage = node.getResponseBuffer(0) / 10.0;
-    float current = node.getResponseBuffer(1) / 100.0;
+  modbus.write(request, 8);
+  modbus.flush();
 
-    uint32_t powerRaw =
-      ((uint32_t)node.getResponseBuffer(2) << 16) |
-       node.getResponseBuffer(3);
-    float power = powerRaw / 10.0;
+  digitalWrite(RS485_DE, LOW);
 
-    float pf = node.getResponseBuffer(4) / 100.0;
-
-    Serial.println("------ IRHAJHUS DATA ------");
-    Serial.print("Voltage : "); Serial.print(voltage); Serial.println(" V");
-    Serial.print("Current : "); Serial.print(current); Serial.println(" A");
-    Serial.print("Power   : "); Serial.print(power);   Serial.println(" W");
-    Serial.print("PF      : "); Serial.println(pf);
-    Serial.println("---------------------------");
+  Serial.print("TX: ");
+  for (int i = 0; i < 8; i++) {
+    Serial.printf("%02X ", request[i]);
   }
-  else {
-    Serial.print("Modbus error: ");
-    Serial.println(result);
-  }
+  Serial.println();
 
-  delay(1000);
+  // ---- RECEIVE ----
+  unsigned long start = millis();
+  Serial.print("RX: ");
+
+  while (millis() - start < 1000) {
+    if (modbus.available()) {
+      uint8_t b = modbus.read();
+      Serial.printf("%02X ", b);
+    }
+  }
+  Serial.println("\n----------------------");
+
+  delay(2000);
 }
