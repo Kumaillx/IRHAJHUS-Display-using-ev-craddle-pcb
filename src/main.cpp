@@ -96,7 +96,7 @@ void loop()
   else
     Serial.println("Current read failed");
 
-  if (readFloat(0x001E, power))
+  if (readFloat(0x0018, power))
     Serial.printf("Power: %.2f kW\n", power);
   else
     Serial.println("Power read failed");
