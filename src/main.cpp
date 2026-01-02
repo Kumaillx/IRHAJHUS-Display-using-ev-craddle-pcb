@@ -91,16 +91,39 @@ void setup()
   Serial.println("IRHAJHUS Meter Modbus RTU Started");
 }
 
+void Voltage(float l1, float l2, float l3)
+{
+  float voltage;
+  
+  // Read Voltage L1
+  if (readFloat(l1, voltage)) {
+    Serial.printf("Voltage L1 : %.2f V\n", voltage);
+  } else {
+    Serial.println("Voltage L1 read failed");
+    return;
+  }
+// Read Voltage L2
+  if (readFloat(l2, voltage)) {
+    Serial.printf("Voltage L2 : %.2f V\n", voltage);
+  } else {
+    Serial.println("Voltage L2 read failed");
+    return;
+  }
+// Read Voltage L3
+  if (readFloat(l3, voltage)) {
+    Serial.printf("Voltage L3 : %.2f V\n", voltage);
+  } else {
+    Serial.println("Voltage L3 read failed");
+  }
+}
+
 void loop()
 {
   float voltage, current, power, pf;
 
-  if (readFloat(0x0006, voltage))
-    Serial.printf("Voltage L1 : %.2f V\n", voltage);
-  else
-    Serial.println("Voltage read failed");
-
-  delay(10);   // RTU silent interval
+  Serial.println("---- Meter Readings ----");
+  Voltage(0x0006, 0x0008, 0x000A);
+  delay(10);
 
   if (readFloat(0x0012, current))
     Serial.printf("Current L1 : %.3f A\n", current);
