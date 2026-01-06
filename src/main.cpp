@@ -1,108 +1,87 @@
-/*
-  main.cpp
-
-  Simple test program to send three frames to the IRHAJHUS meter using
-  the provided PZEM004Tv30 library and print the responses.
-
-  Notes:
-  - This example uses `Serial` for the PZEM interface. If your board
-    has a separate HardwareSerial for the meter (e.g. `Serial1`), replace
-    `Serial` with that instance in the `PZEM004Tv30 pzem(Serial);` line.
-  - The PZEM library communicates at 9600 baud, so we begin Serial at 9600.
-*/
-
 #include <Arduino.h>
-#include "PZEM004Tv30.h"
+#include <PZEM004Tv30.h>
 
-// Pins for ESP32 hardware serial (adjust if different)
-#define TXD1 17
-#define RXD1 16
-#define RS485_DE 4
+// -- Hardware Configuration --
 
-// Use default address; change if your meter uses a different one
-#define METER_ADDR PZEM_DEFAULT_ADDR
+// 1. RX/TX Pins for ESP32 Hardware Serial
+#define RXD2 16
+#define TXD2 17
 
-// Hardware serial instance for meter (ESP32 UART1)
-HardwareSerial meterSerial(1);
+// 2. RS485 Enable Pin for Direction Control
+#define RS485_EN_PIN 4 // Set to -1 if your converter has automatic direction control
 
-// Instantiate PZEM for ESP32: pass HardwareSerial&, RX, TX, addr
-PZEM004Tv30 pzem(meterSerial, RXD1, TXD1, METER_ADDR);
+// 3. PZEM Device Address
+// The diagnostic search found devices at addresses 1, 2, and 100.
+// We will target one of these. Change the address below to read from a different device.
+#define PZEM_ADDRESS 1
 
-void printElectrical()
-{
-    Serial.println("--- Electrical Frame ---");
-    Serial.print("V1: "); Serial.println(pzem.voltage_1());
-    Serial.print("I1: "); Serial.println(pzem.current_1());
-    Serial.print("P1: "); Serial.println(pzem.power_1());
-    Serial.print("V2: "); Serial.println(pzem.voltage_2());
-    Serial.print("I2: "); Serial.println(pzem.current_2());
-    Serial.print("P2: "); Serial.println(pzem.power_2());
-    Serial.print("V3: "); Serial.println(pzem.voltage_3());
-    Serial.print("I3: "); Serial.println(pzem.current_3());
-    Serial.print("P3: "); Serial.println(pzem.power_3());
-    Serial.print("Total Power: "); Serial.println(pzem.total_power());
+
+// Initialize the PZEM object with the specific address you want to read from.
+PZEM004Tv30 pzem(Serial2, RXD2, TXD2, RS485_EN_PIN, PZEM_ADDRESS);
+
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("\n----------------------------------------------------------");
+  Serial.println("PZEM-004T v3.0 Example - Full Parameter Read");
+  Serial.println("Reading data from device at Modbus Address: " + String(PZEM_ADDRESS));
+  Serial.println("----------------------------------------------------------");
 }
 
-void printEnergyFreq()
-{
-    Serial.println("--- Energy & Frequency Frame ---");
-    // updateEnergyFreq() is public and reads frequency/energy
-    if (pzem.updateEnergyFreq()) {
-        Serial.print("Frequency: "); Serial.println(pzem.getFrequency());
-        Serial.print("Energy P: "); Serial.println(pzem.getEnergyP());
-        Serial.print("Energy N: "); Serial.println(pzem.getEnergyN());
-    } else {
-        Serial.println("Failed to read Energy/Frequency frame");
-    }
-}
+void loop() {
+  Serial.println("---------------------------------------");
+  Serial.println("Reading from Address: " + String(pzem.getAddress()));
 
-void printTHD()
-{
-    Serial.println("--- THD Frame ---");
-    if (pzem.updateTHD()) {
-        Serial.print("THD V1: "); Serial.println(pzem.thdVoltage1());
-        Serial.print("THD V2: "); Serial.println(pzem.thdVoltage2());
-        Serial.print("THD V3: "); Serial.println(pzem.thdVoltage3());
-        Serial.print("THD I1: "); Serial.println(pzem.thdCurrent1());
-        Serial.print("THD I2: "); Serial.println(pzem.thdCurrent2());
-        Serial.print("THD I3: "); Serial.println(pzem.thdCurrent3());
-    } else {
-        Serial.println("Failed to read THD frame");
-    }
-}
+  // Update all data groups from the sensor
+  bool elecUpdated = pzem.updateElectrical();
+  bool energyUpdated = pzem.updateEnergyFreq();
+  bool thdUpdated = pzem.updateTHD();
 
-void setup()
-{
-    Serial.begin(115200);
-    pinMode(RS485_DE, OUTPUT);
-    digitalWrite(RS485_DE, LOW);
+  if(elecUpdated && energyUpdated && thdUpdated) {
+    // Phase 1
+    Serial.print("Phase 1: ");
+    Serial.print(pzem.voltage_1(), 1); Serial.print("V, ");
+    Serial.print(pzem.current_1(), 3); Serial.print("A, ");
+    Serial.print(pzem.power_1(), 2); Serial.print("W, ");
+    Serial.print(pzem.pf_1(), 2); Serial.print("PF, ");
+    Serial.print(pzem.thdVoltage1(), 1); Serial.print("% THDV, ");
+    Serial.print(pzem.thdCurrent1(), 1); Serial.println("% THDI");
 
+    // Phase 2
+    Serial.print("Phase 2: ");
+    Serial.print(pzem.voltage_2(), 1); Serial.print("V, ");
+    Serial.print(pzem.current_2(), 3); Serial.print("A, ");
+    Serial.print(pzem.power_2(), 2); Serial.print("W, ");
+    Serial.print(pzem.pf_2(), 2); Serial.print("PF, ");
+    Serial.print(pzem.thdVoltage2(), 1); Serial.print("% THDV, ");
+    Serial.print(pzem.thdCurrent2(), 1); Serial.println("% THDI");
+
+    // Phase 3
+    Serial.print("Phase 3: ");
+    Serial.print(pzem.voltage_3(), 1); Serial.print("V, ");
+    Serial.print(pzem.current_3(), 3); Serial.print("A, ");
+    Serial.print(pzem.power_3(), 2); Serial.print("W, ");
+    Serial.print(pzem.pf_3(), 2); Serial.print("PF, ");
+    Serial.print(pzem.thdVoltage3(), 1); Serial.print("% THDV, ");
+    Serial.print(pzem.thdCurrent3(), 1); Serial.println("% THDI");
+    
     Serial.println();
-    Serial.println("PZEM004Tv30 3-frame test starting...");
 
-    // Note: For ESP32 the PZEM constructor calls port.begin(...)
-    // so do not call meterSerial.begin() here; the library will initialize it.
-    delay(200);
-}
+    // System-wide values
+    Serial.print("System: ");
+    Serial.print(pzem.frequency(), 1); Serial.print("Hz, ");
+    Serial.print(pzem.total_power(), 2); Serial.print("W (TAP), ");
+    Serial.print(pzem.energyp(), 3); Serial.print("kWh (EP), ");
+    Serial.print(pzem.energyn(), 3); Serial.println("kWh (EN)");
+    
+  } else {
+    // This message will be printed if any of the communication updates fail
+    Serial.println("Error reading values from PZEM. Check wiring and device address.");
+    if (!elecUpdated) Serial.println(" -> Electrical values failed.");
+    if (!energyUpdated) Serial.println(" -> Energy/Frequency values failed.");
+    if (!thdUpdated) Serial.println(" -> THD values failed.");
+  }
 
-void loop()
-{
-    // 1) Electrical (use public getters which call updateValues internally)
-    Serial.println("Requesting Electrical values...");
-    printElectrical();
-
-    delay(100);
-
-    // 2) Energy & Frequency
-    Serial.println("Requesting Energy/Frequency values...");
-    printEnergyFreq();
-
-    delay(100);
-
-    // 3) THD
-    Serial.println("Requesting THD values...");
-    printTHD();
-
-    Serial.println("--- Cycle complete ---\n");
-    delay(5000);
+  // Wait 5 seconds before the next read
+  delay(5000);
 }
