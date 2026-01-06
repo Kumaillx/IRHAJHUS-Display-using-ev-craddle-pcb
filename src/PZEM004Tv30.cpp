@@ -108,9 +108,17 @@ PZEM004Tv30::PZEM004Tv30(Stream &port, uint8_t addr)
  */
 #if defined(ESP32)
 
-PZEM004Tv30::PZEM004Tv30(HardwareSerial &port, uint8_t receivePin, uint8_t transmitPin, uint8_t addr)
+PZEM004Tv30::PZEM004Tv30(HardwareSerial &port, uint8_t receivePin, uint8_t transmitPin, int8_t enablePin, uint8_t addr)
 {
     port.begin(PZEM_BAUD_RATE, SERIAL_8E1, receivePin, transmitPin);
+    
+    // Configure RS485 Enable Pin
+    this->_enablePin = enablePin;
+    if(this->_enablePin != -1){
+        pinMode(this->_enablePin, OUTPUT);
+        digitalWrite(this->_enablePin, LOW); // Default to Listen mode
+    }
+
     init((Stream *)&port, false, addr);
 }
 #else
@@ -335,29 +343,37 @@ float PZEM004Tv30::gettotal_power()
  */
 bool PZEM004Tv30::sendCmd8(uint8_t cmd, uint16_t rAddr, uint16_t val, bool check, uint16_t slave_addr)
 {
-    uint8_t sendBuffer[8]; // Send buffer
-    uint8_t respBuffer[8]; // Response buffer (only used when check is true)
+    uint8_t sendBuffer[8]; 
+    uint8_t respBuffer[8]; 
 
-    if ((slave_addr == 0xFFFF) ||
-        (slave_addr < 0x01) ||
-        (slave_addr > 0xF7))
+    if ((slave_addr == 0xFFFF) || (slave_addr < 0x01) || (slave_addr > 0xF7))
     {
         slave_addr = _addr;
     }
 
-    sendBuffer[0] = slave_addr; // Set slave address
-    sendBuffer[1] = cmd;        // Set command
+    sendBuffer[0] = slave_addr; 
+    sendBuffer[1] = cmd;        
 
-    sendBuffer[2] = (rAddr >> 8) & 0xFF; // Set high byte of register address
-    sendBuffer[3] = (rAddr) & 0xFF;      // Set low byte =//=
+    sendBuffer[2] = (rAddr >> 8) & 0xFF; 
+    sendBuffer[3] = (rAddr) & 0xFF;      
 
-    sendBuffer[4] = (val >> 8) & 0xFF; // Set high byte of register value
-    sendBuffer[5] = (val) & 0xFF;      // Set low byte =//=
+    sendBuffer[4] = (val >> 8) & 0xFF; 
+    sendBuffer[5] = (val) & 0xFF;      
 
-    setCRC(sendBuffer, 8); // Set CRC of frame
-   // Serial.printf("send buffer is %02X %02X %02X %02X %02X %02X %02X %02X\n", sendBuffer[0],sendBuffer[1],sendBuffer[2],sendBuffer[3],sendBuffer[4],sendBuffer[5],sendBuffer[6],sendBuffer[7]);
+    setCRC(sendBuffer, 8); 
 
+    // --- START RS485 MODIFICATION ---
+    if(_enablePin != -1) {
+        digitalWrite(_enablePin, HIGH); // Enable Transmission
+        delay(1); // Small delay for stability
+    }
+    
     _serial->write(sendBuffer, 8); // send frame
+    _serial->flush();              // WAIT for transmission to finish
+    
+    if(_enablePin != -1) {
+        digitalWrite(_enablePin, LOW);  // Disable Transmission (Listen Mode)
+    }
 
     if (check)
     {
@@ -635,12 +651,6 @@ bool PZEM004Tv30::updateValues()
         return true;
 
     if (!readElectricalFrame()) return false;
-    delay(10);
-
-    if (!readEnergyFreqFrame()) return false;
-    delay(10);
-
-    if (!readTHDFrame()) return false;
 
     _lastRead = millis();
     return true;
@@ -855,3 +865,5 @@ float PZEM004Tv30::thdVoltage3() { return _currentValues.thd_v3; }
 float PZEM004Tv30::thdCurrent1() { return _currentValues.thd_i1; }
 float PZEM004Tv30::thdCurrent2() { return _currentValues.thd_i2; }
 float PZEM004Tv30::thdCurrent3() { return _currentValues.thd_i3; }
+
+bool PZEM004Tv30::updateElectrical(){ return readElectricalFrame();}

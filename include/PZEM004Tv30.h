@@ -71,7 +71,7 @@ public:
 
 #if defined(ESP32)
     /* ESP32 Hardware serial interface requires the receive and transmit pin specified */
-    PZEM004Tv30(HardwareSerial &port, uint8_t receivePin, uint8_t transmitPin, uint8_t addr = PZEM_DEFAULT_ADDR);
+    PZEM004Tv30(HardwareSerial &port, uint8_t receivePin, uint8_t transmitPin, int8_t enablePin = -1, uint8_t addr = PZEM_DEFAULT_ADDR);
 
     // Deprecate passing pointer
     [[deprecated("Replaced by PZEM004Tv30(HardwareSerial& port, uint8_t receivePin, uint8_t transmitPin, uint8_t addr). Please pass a reference instead of a pointer: PZEM004Tv30(&SerialX)=>PZEM004Tv30(SerialX)")]]
@@ -130,6 +130,7 @@ public:
     bool setPowerAlarm(uint16_t watts);
     bool getPowerAlarm();
 
+    bool updateElectrical();
     bool resetEnergy();
 
     void search();
@@ -145,6 +146,7 @@ public:
 private:
     Stream *_serial; // Serial interface
     bool _isSoft;    // Is serial interface software
+    int8_t _enablePin = -1;
 
 // TODO: if we remove the Local SW serial handling, we can get rid of this trash
 #if defined(PZEM004_SOFTSERIAL)
@@ -191,7 +193,7 @@ private:
     bool readEnergyFreqFrame();
     bool readElectricalFrame();
     bool updateValues(); // Get most up to date values from device registers and cache them
-    bool updateElectrical()   { return readElectricalFrame(); }
+       
 
     float safePF(float power, float voltage, float current);
     float bytesToFloat(uint8_t *bytes);
