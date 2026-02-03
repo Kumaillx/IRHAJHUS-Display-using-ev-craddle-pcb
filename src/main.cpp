@@ -64,9 +64,9 @@ void loop()
             uint16_t rawL2 = (response[5] << 8) | response[6];
             uint16_t rawL3 = (response[7] << 8) | response[8];
 
-            float vL1 = rawL1 / 10.0;
-            float vL2 = rawL2 / 10.0;
-            float vL3 = rawL3 / 10.0;
+            float vL1 = rawL1 / 295.0;
+            float vL2 = rawL2 / 288.0;
+            float vL3 = rawL3 / 290.0;
 
             Serial.print("Avg Voltage L1: ");
             Serial.print(vL1);
