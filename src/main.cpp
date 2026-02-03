@@ -1,87 +1,96 @@
 #include <Arduino.h>
-#include <PZEM004Tv30.h>
 
-// -- Hardware Configuration --
+// ===== UART PINS (change if needed) =====
+#define RX_PIN 16
+#define TX_PIN 17
+// =======================================
 
-// 1. RX/TX Pins for ESP32 Hardware Serial
-#define RXD2 16
-#define TXD2 17
+void setup()
+{
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("ABB M1M30 Average Voltage Reader");
 
-// 2. RS485 Enable Pin for Direction Control
-#define RS485_EN_PIN 4 // Set to -1 if your converter has automatic direction control
-
-// 3. PZEM Device Address
-// The diagnostic search found devices at addresses 1, 2, and 100.
-// We will target one of these. Change the address below to read from a different device.
-#define PZEM_ADDRESS 1
-
-
-// Initialize the PZEM object with the specific address you want to read from.
-PZEM004Tv30 pzem(Serial2, RXD2, TXD2, RS485_EN_PIN, PZEM_ADDRESS);
-
-
-void setup() {
-  Serial.begin(115200);
-  Serial.println("\n----------------------------------------------------------");
-  Serial.println("PZEM-004T v3.0 Example - Full Parameter Read");
-  Serial.println("Reading data from device at Modbus Address: " + String(PZEM_ADDRESS));
-  Serial.println("----------------------------------------------------------");
+    Serial2.begin(19200, SERIAL_8E1, RX_PIN, TX_PIN);
 }
 
-void loop() {
-  Serial.println("---------------------------------------");
-  Serial.println("Reading from Address: " + String(pzem.getAddress()));
+void loop()
+{
+    uint8_t request[8];
 
-  // Update all data groups from the sensor
-  bool elecUpdated = pzem.updateElectrical();
-  bool energyUpdated = pzem.updateEnergyFreq();
-  bool thdUpdated = pzem.updateTHD();
+    // -------- Modbus Request --------
+    request[0] = 0x01;      // Slave ID
+    request[1] = 0x03;      // Read Holding Registers
+    request[2] = 0x5B;      // Start address high (0x5BDC)
+    request[3] = 0xDC;      // Start address low
+    request[4] = 0x00;      // Quantity high
+    request[5] = 0x06;      // Quantity low (6 registers)
 
-  if(elecUpdated && energyUpdated && thdUpdated) {
-    // Phase 1
-    Serial.print("Phase 1: ");
-    Serial.print(pzem.voltage_1(), 1); Serial.print("V, ");
-    Serial.print(pzem.current_1(), 3); Serial.print("A, ");
-    Serial.print(pzem.power_1(), 2); Serial.print("W, ");
-    Serial.print(pzem.pf_1(), 2); Serial.print("PF, ");
-    Serial.print(pzem.thdVoltage1(), 1); Serial.print("% THDV, ");
-    Serial.print(pzem.thdCurrent1(), 1); Serial.println("% THDI");
+    // -------- Inline CRC16 --------
+    uint16_t crc = 0xFFFF;
+    for (int i = 0; i < 6; i++)
+    {
+        crc ^= request[i];
+        for (int b = 0; b < 8; b++)
+        {
+            if (crc & 0x0001)
+            {
+                crc >>= 1;
+                crc ^= 0xA001;
+            }
+            else
+                crc >>= 1;
+        }
+    }
 
-    // Phase 2
-    Serial.print("Phase 2: ");
-    Serial.print(pzem.voltage_2(), 1); Serial.print("V, ");
-    Serial.print(pzem.current_2(), 3); Serial.print("A, ");
-    Serial.print(pzem.power_2(), 2); Serial.print("W, ");
-    Serial.print(pzem.pf_2(), 2); Serial.print("PF, ");
-    Serial.print(pzem.thdVoltage2(), 1); Serial.print("% THDV, ");
-    Serial.print(pzem.thdCurrent2(), 1); Serial.println("% THDI");
+    request[6] = crc & 0xFF;        // CRC Low
+    request[7] = (crc >> 8) & 0xFF; // CRC High
+    // --------------------------------
 
-    // Phase 3
-    Serial.print("Phase 3: ");
-    Serial.print(pzem.voltage_3(), 1); Serial.print("V, ");
-    Serial.print(pzem.current_3(), 3); Serial.print("A, ");
-    Serial.print(pzem.power_3(), 2); Serial.print("W, ");
-    Serial.print(pzem.pf_3(), 2); Serial.print("PF, ");
-    Serial.print(pzem.thdVoltage3(), 1); Serial.print("% THDV, ");
-    Serial.print(pzem.thdCurrent3(), 1); Serial.println("% THDI");
-    
-    Serial.println();
+    Serial2.write(request, 8);
+    Serial2.flush();
 
-    // System-wide values
-    Serial.print("System: ");
-    Serial.print(pzem.frequency(), 1); Serial.print("Hz, ");
-    Serial.print(pzem.total_power(), 2); Serial.print("W (TAP), ");
-    Serial.print(pzem.energyp(), 3); Serial.print("kWh (EP), ");
-    Serial.print(pzem.energyn(), 3); Serial.println("kWh (EN)");
-    
-  } else {
-    // This message will be printed if any of the communication updates fail
-    Serial.println("Error reading values from PZEM. Check wiring and device address.");
-    if (!elecUpdated) Serial.println(" -> Electrical values failed.");
-    if (!energyUpdated) Serial.println(" -> Energy/Frequency values failed.");
-    if (!thdUpdated) Serial.println(" -> THD values failed.");
-  }
+    delay(250);
 
-  // Wait 5 seconds before the next read
-  delay(5000);
+    // -------- Read Response --------
+    if (Serial2.available() >= 17)
+    {
+        uint8_t response[17];
+        Serial2.readBytes(response, 17);
+
+        if (response[1] == 0x03)
+        {
+            uint16_t rawL1 = (response[3] << 8) | response[4];
+            uint16_t rawL2 = (response[5] << 8) | response[6];
+            uint16_t rawL3 = (response[7] << 8) | response[8];
+
+            float vL1 = rawL1 / 10.0;
+            float vL2 = rawL2 / 10.0;
+            float vL3 = rawL3 / 10.0;
+
+            Serial.print("Avg Voltage L1: ");
+            Serial.print(vL1);
+            Serial.println(" V");
+
+            Serial.print("Avg Voltage L2: ");
+            Serial.print(vL2);
+            Serial.println(" V");
+
+            Serial.print("Avg Voltage L3: ");
+            Serial.print(vL3);
+            Serial.println(" V");
+
+            Serial.println("---------------------------");
+        }
+        else
+        {
+            Serial.println("Modbus exception response");
+        }
+    }
+    else
+    {
+        Serial.println("No response from meter");
+    }
+
+    delay(3000);
 }
